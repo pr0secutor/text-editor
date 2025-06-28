@@ -46,8 +46,12 @@ text-editor-python/
    git clone https://github.com/your-username/text-editor-python.git
    cd text-editor-python
    ```
+2. Install the packages
+   ```bash
+   pip install -r requirements.txt 
+   ```
 
-2. Run the app:
+3. Run the app:
    ```bash
    python main.py
    ```
