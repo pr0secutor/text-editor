@@ -2,7 +2,7 @@ from tkinter import Frame, Scrollbar, Text, Label, Menu, BooleanVar
 from file_operations import new_file, open_file, save_file, save_as_file
 from edit_functions import cut_text, copy_text, paste_text, select_all
 from format_functions import bg_color, all_text_color, find_text, wrap
-from toolbar import setup_toolbar
+from toolbar import setup_toolbar, TextEditor
 
 def setup_ui(root):
     # Initialize global status for file operations
@@ -108,8 +108,11 @@ def setup_ui(root):
         command=lambda: wrap(my_text, word_wrap)
     )
 
-    # Setup toolbar
-    setup_toolbar(toolbar_frame, my_text, status_bar)
+    # Setup TextEditor for undo/redo history
+    editor = TextEditor(my_text)
+
+    # Setup toolbar (pass editor)
+    setup_toolbar(toolbar_frame, my_text, status_bar, editor)
 
     # Bindings
     root.bind('<Control-Key-n>', lambda e: new_file(my_text, status_bar, root))

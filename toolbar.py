@@ -1,7 +1,145 @@
-from tkinter import Button
+from tkinter import Button, Text, Frame, Tk, Label
 from tkinter import font
-from PIL import Image, ImageTk
 from tkinter import colorchooser
+from PIL import Image, ImageTk
+import re
+
+class DoublyLinkedList:
+    class Node:
+        def __init__(self, word="", index=-1, action=""):
+            self.word = word  # The word or token (e.g., space, punctuation)
+            self.index = index  # Position in the word list
+            self.action = action  # "insert" or "delete"
+            self.next = None
+            self.prev = None
+
+    def __init__(self, max_history=100):
+        self.head = None
+        self.curr = None
+        self.tail = None
+        self.max_history = max_history
+        self.size = 0
+
+    def insert(self, word, index, action):
+        new_node = self.Node(word, index, action)
+        if self.curr is None:
+            self.head = new_node
+            self.curr = new_node
+            self.tail = new_node
+            self.size = 1
+        else:
+            new_node.prev = self.curr
+            self.curr.next = new_node
+            self.curr = new_node
+            self.tail = new_node
+            self.size += 1
+            # Truncate forward history
+            self.tail.next = None
+            # Limit history size
+            if self.size > self.max_history:
+                self.head = self.head.next
+                self.head.prev = None
+                self.size -= 1
+
+    def undo(self):
+        if self.curr and self.curr.prev:
+            self.curr = self.curr.prev
+            return self.curr.word, self.curr.index, self.curr.action
+        return None, -1, ""
+
+    def redo(self):
+        if self.curr and self.curr.next:
+            self.curr = self.curr.next
+            return self.curr.word, self.curr.index, self.curr.action
+        return None, -1, ""
+
+class TextEditor:
+    def __init__(self, text_widget):
+        self.text = text_widget
+        self.history = DoublyLinkedList(max_history=100)
+        self.words = []  # Current list of words/tokens
+        self.last_content = ""
+        # Bind text changes
+        self.text.bind("<<Modified>>", self.on_text_change)
+        self.text.bind("<KeyRelease>", self.on_key_release)
+        # Initialize history with empty state
+        self.history.insert("", -1, "init")
+        self.pending_change = False  # Debounce flag
+
+    def get_words(self, content):
+        # Split on whitespace and punctuation, preserving them as tokens
+        return [w for w in re.split(r'(\s+|[^\w\s])', content) if w]
+
+    def on_key_release(self, event):
+        # Trigger change detection on specific keys
+        if event.keysym in ("space", "Return", "BackSpace", "Delete") or event.char in (".", ",", "!", "?", ";", ":"):
+            self.pending_change = True
+            self.on_text_change(event)
+
+    def on_text_change(self, event):
+        if not (self.text.edit_modified() or self.pending_change):
+            return
+        current_content = self.text.get("1.0", "end-1c")
+        if current_content == self.last_content:
+            self.text.edit_modified(False)
+            self.pending_change = False
+            return
+
+        current_words = self.get_words(current_content)
+        last_words = self.get_words(self.last_content)
+
+        # Find the first difference
+        i = 0
+        while i < len(current_words) and i < len(last_words) and current_words[i] == last_words[i]:
+            i += 1
+
+        if i < len(current_words) and i < len(last_words):
+            # Word changed at position i
+            if len(current_words) > len(last_words):
+                # Insertion
+                self.history.insert(current_words[i], i, "insert")
+            elif len(current_words) < len(last_words):
+                # Deletion
+                self.history.insert(last_words[i], i, "delete")
+        elif len(current_words) > len(last_words) and current_words:
+            # Word inserted at the end
+            self.history.insert(current_words[-1], len(current_words)-1, "insert")
+        elif len(current_words) < len(last_words) and last_words:
+            # Word deleted from the end
+            self.history.insert(last_words[-1], len(last_words)-1, "delete")
+
+        self.words = current_words
+        self.last_content = current_content
+        self.text.edit_modified(False)
+        self.pending_change = False
+
+    def undo(self):
+        word, index, action = self.history.undo()
+        if word is not None:
+            if action == "insert":
+                # Remove the inserted word
+                self.words.pop(index)
+            elif action == "delete":
+                # Reinsert the deleted word
+                self.words.insert(index, word)
+            # Rebuild text from words
+            self.text.delete("1.0", "end")
+            self.text.insert("1.0", "".join(self.words))
+            self.last_content = "".join(self.words)
+
+    def redo(self):
+        word, index, action = self.history.redo()
+        if word is not None:
+            if action == "insert":
+                # Reinsert the word
+                self.words.insert(index, word)
+            elif action == "delete":
+                # Remove the word again
+                self.words.pop(index)
+            # Rebuild text from words
+            self.text.delete("1.0", "end")
+            self.text.insert("1.0", "".join(self.words))
+            self.last_content = "".join(self.words)
 
 def bold(my_text):
     bold_font = font.Font(my_text, my_text.cget("font"))
@@ -79,15 +217,15 @@ def align_middle(my_text):
 def align_justify(my_text):
     remove_align_tags(my_text)
 
-def setup_toolbar(toolbar_frame, my_text, status_bar):
+def setup_toolbar(toolbar_frame, my_text, status_bar, editor):
     # Undo & Redo buttons
     undo_icon = ImageTk.PhotoImage(Image.open("icons/undo.png").resize((15, 15), Image.LANCZOS))
-    undo_button = Button(toolbar_frame, borderwidth=0, image=undo_icon, command=my_text.edit_undo)
+    undo_button = Button(toolbar_frame, borderwidth=0, image=undo_icon, command=editor.undo)
     undo_button.image = undo_icon  # Keep reference
     undo_button.grid(row=0, column=0, sticky="w", padx=8, pady=2)
 
     redo_icon = ImageTk.PhotoImage(Image.open("icons/redo.png").resize((15, 15), Image.LANCZOS))
-    redo_button = Button(toolbar_frame, borderwidth=0, image=redo_icon, command=my_text.edit_redo)
+    redo_button = Button(toolbar_frame, borderwidth=0, image=redo_icon, command=editor.redo)
     redo_button.image = redo_icon
     redo_button.grid(row=0, column=1, sticky="w", padx=8, pady=2)
 
